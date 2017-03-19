@@ -1,0 +1,4 @@
+urbansense.db
+*.egg-info
+.eggs/
+*.pyc

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset=utf-8 />
+  <title>UrbanSense</title>
+  <script src='https://api.mapbox.com/mapbox.js/v3.0.1/mapbox.js'></script>
+  <link href='https://api.mapbox.com/mapbox.js/v3.0.1/mapbox.css' rel='stylesheet' />
+  <style>
+    body { margin:0; padding:0; }
+    .map { position:absolute; top:0; bottom:0; width:100%; }
+  </style>
+</head>
+<body>
+<div id='map-one' class='map'> </div>
+<script>
+  L.mapbox.accessToken = 'pk.eyJ1IjoiY2p3ZWkiLCJhIjoiY2owaDRnMGF3MDMxbTJ3cWxmYWtyajg1diJ9.6FFMV_2itkfqPJWExIsufQ';
+  var map = L.mapbox.map('map-one', 'mapbox.streets')
+  map.setView([40.444623, -79.942986], 14);
+  // add for loop here
+  L.marker([40.443929, -79.950668])
+    .bindPopup('<div class="dp"><div class="dp-measurement">Measurement: 10.0</div></div>')
+    .addTo(map);
+
+</script>
+</body>
+</html>
