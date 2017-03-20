@@ -85,6 +85,8 @@ def test_task():
     client = get_influx_client()
     results = client.query('''SELECT * FROM "ir" WHERE "time" <= %d AND "time" > %d''' % (current_time, current_time - 60*10))
     pts = list(results.get_points(measurement="ir"))
+    if len(pts) == 0:
+        return "No new values to be processed!"
     m = max(pts, key=lambda x: x["value"])
     # insert max result into our sqlite database
     db = get_db()
