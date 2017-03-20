@@ -2,7 +2,7 @@ import os
 import time
 from sqlite3 import dbapi2 as sqlite3
 
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, render_template
 from .exceptions import InvalidUsage
 from influxdb import InfluxDBClient
 
@@ -51,6 +51,12 @@ def get_db():
        g.sqlite_db = connect_db()
    return g.sqlite_db
 
+@app.teardown_appcontext
+def close_db(error):
+   """Closes the database again at the end of the request."""
+   if hasattr(g, 'sqlite_db'):
+       g.sqlite_db.close()
+
 @app.errorhandler(InvalidUsage)
 def handle_invalid_usage(error):
     response = jsonify(error.to_dict())
@@ -65,8 +71,10 @@ def hello_world():
 @app.route('/map')
 def render_test_map():
     db = get_db()
-    db.execute("SELECT * FROM test")
-    result = db.fetchall()
+    c = db.cursor()
+    c.execute("SELECT * FROM test")
+    result = c.fetchall()
+    print result
     return render_template("index.html", data=result)
 
 @app.route('/test')

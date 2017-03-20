@@ -17,10 +17,11 @@
   var map = L.mapbox.map('map-one', 'mapbox.streets')
   map.setView([40.444623, -79.942986], 14);
   // add for loop here
-  L.marker([40.443929, -79.950668])
-    .bindPopup('<div class="dp"><div class="dp-measurement">Measurement: 10.0</div></div>')
+  {% for d in data %}
+  L.marker([{{ d.lat }}, {{ d.lng }}])
+    .bindPopup('<div class="dp"><div class="dp-measurement">Measurement: {{ d.value }}</div></div>')
     .addTo(map);
-
+  {% endfor %}
 </script>
 </body>
 </html>
