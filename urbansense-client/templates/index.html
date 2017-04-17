@@ -15,10 +15,19 @@
 <script>
   L.mapbox.accessToken = 'pk.eyJ1IjoiY2p3ZWkiLCJhIjoiY2owaDRnMGF3MDMxbTJ3cWxmYWtyajg1diJ9.6FFMV_2itkfqPJWExIsufQ';
   var map = L.mapbox.map('map-one', 'mapbox.streets')
+
+  var redIcon = L.icon({
+    iconUrl: '/static/images/red-icon.png',
+    iconSize:     [40, 60], // size of the icon
+    iconAnchor:   [22, 90],
+    popupAnchor:  [0, 0] // point from which the popup should open relative to the iconAnchor
+  });
+
+
   map.setView([40.444623, -79.942986], 14);
   // add for loop here
   {% for d in data %}
-  L.marker([{{ d.lat }}, {{ d.lng }}])
+  L.marker([{{ d.lat }}, {{ d.lng }}] {% if d.is_pothole %}, {icon: redIcon} {% endif %}  )
     .bindPopup('<div class="dp"><div class="dp-measurement">Measurement: {{ d.value }}</div></div>')
     .addTo(map);
   {% endfor %}

@@ -1,2 +1,2 @@
-from .urbansense_client import app
+from .urbansense_client import *
 

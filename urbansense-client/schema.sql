@@ -4,5 +4,6 @@ create table test (
     time integer not null,
     lat real not null,
     lng real not null,
-    value real not null
+    value real not null,
+    is_pothole boolean not null
 );

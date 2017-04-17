@@ -1,13 +1,15 @@
 import os
 import time
+from celery import Celery
+import celery
 from sqlite3 import dbapi2 as sqlite3
 
 from flask import Flask, request, jsonify, g, render_template
 from .exceptions import InvalidUsage
+from .tasks import make_celery
 from influxdb import InfluxDBClient
 
 app = Flask(__name__)
-
 # Load default config and override config from an environment variable
 app.config.update(dict(
     DATABASE=os.path.join(app.root_path, 'urbansense.db'),
@@ -16,8 +18,20 @@ app.config.update(dict(
     USERNAME='admin',
     PASSWORD='default',
     INFLUX_HOST='localhost',
-    INFLUX_PORT=8086
+    INFLUX_PORT=8086,
+    CELERY_BROKER_URL='redis://localhost:6379/0',
+    CELERY_RESULT_BACKEND='redis://localhost:6379/0',
+    CELERYBEAT_SCHEDULE={
+        'print-two-every-30-secs': {
+            'task': 'urbansense-client.urbansense_client.process_ir',
+            'schedule': 30.0,
+            'args': ()
+        }
+    },
+    CELERY_TIMEZONE='UTC'
 ))
+
+celery = make_celery(app)
 
 def get_influx_client():
     return InfluxDBClient(app.config['INFLUX_HOST'], app.config['INFLUX_PORT'], database='alpha')
@@ -35,7 +49,6 @@ def init_db():
     with app.open_resource('schema.sql', mode='r') as f:
         db.cursor().executescript(f.read())
     db.commit()
-
 
 @app.cli.command('initdb')
 def initdb_command():
@@ -64,6 +77,8 @@ def handle_invalid_usage(error):
     return response
 
 
+# -------------------------------------------------------------------------------
+
 @app.route('/')
 def hello_world():
 	return 'UrbanSense server ready to receive data...\n'
@@ -72,10 +87,10 @@ def hello_world():
 def render_test_map():
     db = get_db()
     c = db.cursor()
-    c.execute("SELECT * FROM test")
-    result = c.fetchall()
-    print result
-    return render_template("index.html", data=result)
+    rows = c.execute("SELECT * FROM test").fetchall()
+    
+
+    return render_template("index.html", data=rows)
 
 @app.route('/test')
 def test_task():
@@ -83,7 +98,7 @@ def test_task():
     value in that time period"""
     current_time = int(time.time())
     client = get_influx_client()
-    results = client.query('''SELECT * FROM "ir" WHERE "time" <= %d AND "time" > %d''' % (current_time, current_time - 60*10))
+    results = client.query('''SELECT * FROM "ir" WHERE "time" <= %d AND "time" > %d''' % (current_time, current_time - 30))
     pts = list(results.get_points(measurement="ir"))
     if len(pts) == 0:
         return "No new values to be processed!"
@@ -94,3 +109,30 @@ def test_task():
         (m["time"], m["lat"], m["lng"], m["value"]))
     db.commit()
     return "success!"
+
+
+# --------------------------------- TASKS --------------------------------------
+
+@celery.task()
+def process_ir():
+    """Polls for 10 minutes of data every 10 minutes and selects the maximum
+    value in that time period"""
+    current_time = int(time.time())
+    client = get_influx_client()
+    #results = client.query('''SELECT * FROM "ir" WHERE "time" <= %d AND "time" > %d''' % (current_time, current_time - 30))
+
+    results = client.query('''SELECT * FROM "accel" WHERE tag_name='z' ''')
+    pts = list(results.get_points(measurement="accel"))
+    if len(pts) == 0:
+        print "No new values to be processed!"
+        return
+    db = get_db()
+    for m in pts:
+        is_pothole = m["value"] > 1100 or m["value"] < 700
+        db.execute("INSERT INTO test (time, lat, lng, value, is_pothole) VALUES (?, ?, ?, ?, ?)",
+            (m["time"], m["lat"], m["lng"], m["value"], is_pothole))
+    
+    db.commit()
+    print "success!"
+    return
+
