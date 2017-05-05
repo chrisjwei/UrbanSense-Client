@@ -4,7 +4,7 @@ from celery import Celery
 import celery
 from sqlite3 import dbapi2 as sqlite3
 
-from flask import Flask, request, jsonify, g, render_template
+from flask import Flask, request, jsonify, g, render_template, url_for
 from .exceptions import InvalidUsage
 from .tasks import make_celery
 from influxdb import InfluxDBClient
@@ -19,11 +19,17 @@ app.config.update(dict(
     PASSWORD='default',
     INFLUX_HOST='localhost',
     INFLUX_PORT=8086,
+    INFLUX_DB='urbansense-data',
     CELERY_BROKER_URL='redis://localhost:6379/0',
     CELERY_RESULT_BACKEND='redis://localhost:6379/0',
     CELERYBEAT_SCHEDULE={
-        'print-two-every-30-secs': {
+        'process-ir-every-30-secs': {
             'task': 'urbansense-client.urbansense_client.process_ir',
+            'schedule': 30.0,
+            'args': ()
+        },
+        'process-accel-every-30-secs': {
+            'task': 'urbansense-client.urbansense_client.process_accel',
             'schedule': 30.0,
             'args': ()
         }
@@ -34,7 +40,7 @@ app.config.update(dict(
 celery = make_celery(app)
 
 def get_influx_client():
-    return InfluxDBClient(app.config['INFLUX_HOST'], app.config['INFLUX_PORT'], database='alpha')
+    return InfluxDBClient(app.config['INFLUX_HOST'], app.config['INFLUX_PORT'], database=app.config['INFLUX_DB'])
 
 def connect_db():
     """Connects to the specific database."""
@@ -76,6 +82,19 @@ def handle_invalid_usage(error):
     response.status_code = error.status_code
     return response
 
+# Browser Cache bbuster code
+@app.context_processor
+def override_url_for():
+    return dict(url_for=dated_url_for)
+
+def dated_url_for(endpoint, **values):
+    if endpoint == 'static':
+        filename = values.get('filename', None)
+        if filename:
+            file_path = os.path.join(app.root_path,
+                                     endpoint, filename)
+            values['q'] = int(os.stat(file_path).st_mtime)
+    return url_for(endpoint, **values)
 
 # -------------------------------------------------------------------------------
 
@@ -87,10 +106,12 @@ def hello_world():
 def render_test_map():
     db = get_db()
     c = db.cursor()
-    rows = c.execute("SELECT * FROM test").fetchall()
+    rows = c.execute("SELECT * FROM test WHERE lat != 0 AND lng != 0").fetchall()
     
-
-    return render_template("index.html", data=rows)
+    data = {
+        "accel": rows
+    }
+    return render_template("index.html", data=data)
 
 @app.route('/test')
 def test_task():
@@ -114,22 +135,45 @@ def test_task():
 # --------------------------------- TASKS --------------------------------------
 
 @celery.task()
-def process_ir():
+def process_accel():
     """Polls for 10 minutes of data every 10 minutes and selects the maximum
     value in that time period"""
     current_time = int(time.time())
     client = get_influx_client()
-    #results = client.query('''SELECT * FROM "ir" WHERE "time" <= %d AND "time" > %d''' % (current_time, current_time - 30))
+    results = client.query(
+        'SELECT * FROM "accel" WHERE tag_name=\'z\' and "time" <= %d AND "time" > %d' % (current_time, current_time - 30)
+    )
 
-    results = client.query('''SELECT * FROM "accel" WHERE tag_name='z' ''')
     pts = list(results.get_points(measurement="accel"))
     if len(pts) == 0:
         print "No new values to be processed!"
         return
     db = get_db()
     for m in pts:
-        is_pothole = m["value"] > 1100 or m["value"] < 700
-        db.execute("INSERT INTO test (time, lat, lng, value, is_pothole) VALUES (?, ?, ?, ?, ?)",
+        is_pothole = abs(m["value"]) > 1100 or abs(m["value"]) < 890
+        db.execute("INSERT INTO accel (time, lat, lng, value, is_pothole) VALUES (?, ?, ?, ?, ?)",
+            (m["time"], m["lat"], m["lng"], m["value"], is_pothole))
+    
+    db.commit()
+    print "success!"
+    return
+
+@celery.task()
+def process_ir():
+    """Polls for 10 minutes of data every 10 minutes and selects the maximum
+    value in that time period"""
+    current_time = int(time.time())
+    client = get_influx_client()
+    results = client.query('''SELECT * FROM "ir" WHERE "time" <= %d AND "time" > %d''' % (current_time, current_time - 30))
+    
+    pts = list(results.get_points(measurement="accel"))
+    if len(pts) == 0:
+        print "No new values to be processed!"
+        return
+    db = get_db()
+    for m in pts:
+        is_pothole = abs(m["value"]) > 1100 or abs(m["value"]) < 890
+        db.execute("INSERT INTO ir (time, lat, lng, value, is_pothole) VALUES (?, ?, ?, ?, ?)",
             (m["time"], m["lat"], m["lng"], m["value"], is_pothole))
     
     db.commit()

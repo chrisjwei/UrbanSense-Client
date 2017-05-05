@@ -1,36 +1,47 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset=utf-8 />
-  <title>UrbanSense</title>
-  <script src='https://api.mapbox.com/mapbox.js/v3.0.1/mapbox.js'></script>
-  <link href='https://api.mapbox.com/mapbox.js/v3.0.1/mapbox.css' rel='stylesheet' />
-  <style>
-    body { margin:0; padding:0; }
-    .map { position:absolute; top:0; bottom:0; width:100%; }
-  </style>
-</head>
-<body>
-<div id='map-one' class='map'> </div>
-<script>
-  L.mapbox.accessToken = 'pk.eyJ1IjoiY2p3ZWkiLCJhIjoiY2owaDRnMGF3MDMxbTJ3cWxmYWtyajg1diJ9.6FFMV_2itkfqPJWExIsufQ';
-  var map = L.mapbox.map('map-one', 'mapbox.streets')
-
-  var redIcon = L.icon({
-    iconUrl: '/static/images/red-icon.png',
-    iconSize:     [40, 60], // size of the icon
-    iconAnchor:   [22, 90],
-    popupAnchor:  [0, 0] // point from which the popup should open relative to the iconAnchor
-  });
+  <head>
+    <meta charset=utf-8 />
+    <title>UrbanSense</title>
+    <link href='https://api.mapbox.com/mapbox.js/v3.0.1/mapbox.css' rel='stylesheet' />
+    <style>
+      body { margin:0; padding:0; }
+      .map { position:absolute; top:0; bottom:0; width:100%; }
+    </style>
+    <script src="{{ url_for('static', filename='css/leaflet.css') }}"></script>
+  </head>
+  <body>
+    <div id='map-one' class='map'> </div>
 
 
-  map.setView([40.444623, -79.942986], 14);
-  // add for loop here
-  {% for d in data %}
-  L.marker([{{ d.lat }}, {{ d.lng }}] {% if d.is_pothole %}, {icon: redIcon} {% endif %}  )
-    .bindPopup('<div class="dp"><div class="dp-measurement">Measurement: {{ d.value }}</div></div>')
-    .addTo(map);
-  {% endfor %}
-</script>
-</body>
+    <script src='https://api.mapbox.com/mapbox.js/v3.0.1/mapbox.js'></script>
+    <script src="{{ url_for('static', filename='js/leaflet-heat.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/render-map.js') }}"></script>
+    <script>
+      
+
+      var accel_points = []
+      {% for d in data["accel"] %}
+        {% if d.is_pothole %}
+          var intensity = 1.0
+        {% else %}
+          var intensity = 0.001
+        {% endif %}
+        accel_points.push(
+          [{{ d.lat }}, {{ d.lng }}, intensity] // lat, lng, intensity
+        )
+      {% endfor %}
+      points = {
+        "accel": accel_points
+      }
+      generate_map(points)
+      
+      // add for loop here
+      // {% for d in data %}
+      // L.marker([{{ d.lat }}, {{ d.lng }}] {% if d.is_pothole %}, {icon: redIcon} {% endif %}  )
+      //   .bindPopup('<div class="dp"><div class="dp-measurement">Measurement: {{ d.value }}</div></div>')
+      //   .addTo(map);
+      // {% endfor %}
+    </script>
+  </body>
 </html>
