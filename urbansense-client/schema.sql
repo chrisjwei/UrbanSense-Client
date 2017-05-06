@@ -1,4 +1,4 @@
-drop table if exists test;
+drop table if exists data;
 create table data (
     id integer primary key autoincrement,
     time integer not null,
@@ -6,6 +6,6 @@ create table data (
     lng real not null,
     value real not null,
     is_pothole boolean not null,
-    sensor_id integer not null,
+    sensor_name text not null
 );
 

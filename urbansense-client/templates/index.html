@@ -31,8 +31,21 @@
           [{{ d.lat }}, {{ d.lng }}, intensity] // lat, lng, intensity
         )
       {% endfor %}
+      var ir_points = []
+      {% for d in data["ir"] %}
+        {% if d.is_pothole %}
+          var intensity = 1.0
+        {% else %}
+          var intensity = 0.001
+        {% endif %}
+        ir_points.push(
+          [{{ d.lat }}, {{ d.lng }}, intensity] // lat, lng, intensity
+        )
+      {% endfor %}
+      console.log(ir_points)
       points = {
-        "accel": accel_points
+        "accel": accel_points,
+        "ir": ir_points
       }
       generate_map(points)
       

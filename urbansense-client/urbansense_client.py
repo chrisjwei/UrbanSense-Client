@@ -6,8 +6,10 @@ from sqlite3 import dbapi2 as sqlite3
 
 from flask import Flask, request, jsonify, g, render_template, url_for
 from .exceptions import InvalidUsage
-from .tasks import make_celery
+from .tasks import make_celery, TASK_TIME_INTERVAL
 from influxdb import InfluxDBClient
+from anomaly import find_anomalies
+import sensor_lut
 
 app = Flask(__name__)
 # Load default config and override config from an environment variable
@@ -17,21 +19,23 @@ app.config.update(dict(
     SECRET_KEY='development key',
     USERNAME='admin',
     PASSWORD='default',
+    DB_TABLE="data",
     INFLUX_HOST='localhost',
     INFLUX_PORT=8086,
-    INFLUX_DB='urbansense-data',
+    INFLUX_DB='alpha',
+    ENV='dev',
     CELERY_BROKER_URL='redis://localhost:6379/0',
     CELERY_RESULT_BACKEND='redis://localhost:6379/0',
     CELERYBEAT_SCHEDULE={
         'process-ir-every-30-secs': {
-            'task': 'urbansense-client.urbansense_client.process_ir',
-            'schedule': 30.0,
-            'args': ()
+            'task': 'urbansense-client.urbansense_client.process_data',
+            'schedule': TASK_TIME_INTERVAL,
+            'args': ["ir", 'SELECT * FROM %s']
         },
         'process-accel-every-30-secs': {
-            'task': 'urbansense-client.urbansense_client.process_accel',
-            'schedule': 30.0,
-            'args': ()
+            'task': 'urbansense-client.urbansense_client.process_data',
+            'schedule': TASK_TIME_INTERVAL,
+            'args': ["accel", 'SELECT * FROM %s WHERE tag_name=\'z\'']
         }
     },
     CELERY_TIMEZONE='UTC'
@@ -106,77 +110,48 @@ def hello_world():
 def render_test_map():
     db = get_db()
     c = db.cursor()
-    rows = c.execute("SELECT * FROM test WHERE lat != 0 AND lng != 0").fetchall()
+    data = {}
+    for sensor_name in sensor_lut.SENSOR_MAPPINGS.values():
+        rows = c.execute("SELECT * FROM %s WHERE lat != 0 AND lng != 0 AND sensor_name = '%s'" % (app.config["DB_TABLE"], sensor_name)).fetchall()
+        data[sensor_name] = rows
     
-    data = {
-        "accel": rows
-    }
     return render_template("index.html", data=data)
-
-@app.route('/test')
-def test_task():
-    """Polls for 10 minutes of data every 10 minutes and selects the maximum
-    value in that time period"""
-    current_time = int(time.time())
-    client = get_influx_client()
-    results = client.query('''SELECT * FROM "ir" WHERE "time" <= %d AND "time" > %d''' % (current_time, current_time - 30))
-    pts = list(results.get_points(measurement="ir"))
-    if len(pts) == 0:
-        return "No new values to be processed!"
-    m = max(pts, key=lambda x: x["value"])
-    # insert max result into our sqlite database
-    db = get_db()
-    db.execute("INSERT INTO test (time, lat, lng, value) VALUES (?, ?, ?, ?)",
-        (m["time"], m["lat"], m["lng"], m["value"]))
-    db.commit()
-    return "success!"
 
 
 # --------------------------------- TASKS --------------------------------------
 
 @celery.task()
-def process_accel():
+def process_data(sensor_name, query_string):
     """Polls for 10 minutes of data every 10 minutes and selects the maximum
     value in that time period"""
     current_time = int(time.time())
     client = get_influx_client()
-    results = client.query(
-        'SELECT * FROM "accel" WHERE tag_name=\'z\' and "time" <= %d AND "time" > %d' % (current_time, current_time - 30)
-    )
-
-    pts = list(results.get_points(measurement="accel"))
+    if app.config["ENV"] == 'dev':
+        results = client.query(
+            query_string % (sensor_name),
+            epoch="ns"
+        )
+    else:
+        results = client.query(
+            (query_string + ' and "time" <= %d AND "time" > %d') % (sensor_name, current_time, current_time - TASK_TIME_INTERVAL),
+            epoch="ns"
+        )
+        
+    pts = list(results.get_points(measurement=sensor_name))
     if len(pts) == 0:
-        print "No new values to be processed!"
+        print "No new {} values to be processed!".format(sensor_name)
         return
+
+    anomalies = find_anomalies(pts)
+
+
     db = get_db()
     for m in pts:
-        is_pothole = abs(m["value"]) > 1100 or abs(m["value"]) < 890
-        db.execute("INSERT INTO accel (time, lat, lng, value, is_pothole) VALUES (?, ?, ?, ?, ?)",
-            (m["time"], m["lat"], m["lng"], m["value"], is_pothole))
+        is_pothole = m["time"] in anomalies
+        db.execute("INSERT INTO data (time, lat, lng, value, is_pothole, sensor_name) VALUES (?, ?, ?, ?, ?, ?)",
+            (m["time"], m["lat"], m["lng"], m["value"], is_pothole, sensor_name))
     
     db.commit()
-    print "success!"
-    return
-
-@celery.task()
-def process_ir():
-    """Polls for 10 minutes of data every 10 minutes and selects the maximum
-    value in that time period"""
-    current_time = int(time.time())
-    client = get_influx_client()
-    results = client.query('''SELECT * FROM "ir" WHERE "time" <= %d AND "time" > %d''' % (current_time, current_time - 30))
-    
-    pts = list(results.get_points(measurement="accel"))
-    if len(pts) == 0:
-        print "No new values to be processed!"
-        return
-    db = get_db()
-    for m in pts:
-        is_pothole = abs(m["value"]) > 1100 or abs(m["value"]) < 890
-        db.execute("INSERT INTO ir (time, lat, lng, value, is_pothole) VALUES (?, ?, ?, ?, ?)",
-            (m["time"], m["lat"], m["lng"], m["value"], is_pothole))
-    
-    db.commit()
-    print "success!"
+    print "Success! {} data parsed!".format(sensor_name)
     return
 

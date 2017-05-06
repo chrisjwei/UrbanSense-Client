@@ -25,7 +25,7 @@ function generate_map(points) {
 	var map = init_map()
 	var accel_heat = L.heatLayer(points["accel"], {radius: 25, blur: 30}).addTo(map);
 
-	var ir_heat = L.heatLayer(points["accel"], {radius: 40, blur: 30}).addTo(map);
+	var ir_heat = L.heatLayer(points["ir"], {radius: 25, blur: 30}).addTo(map);
 
 	var baseLayers = {
 		"Accelerometer": accel_heat,
@@ -35,6 +35,8 @@ function generate_map(points) {
 	L.control.layers(baseLayers, [],{
 		collapsed: false
 	}).addTo(map);
+	map.addLayer(accel_heat)
+	map.removeLayer(ir_heat)
 
 }
 

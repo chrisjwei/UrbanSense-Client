@@ -1,5 +1,9 @@
 from celery import Celery
 
+
+
+TASK_TIME_INTERVAL = 20.0
+
 def make_celery(app):
     celery = Celery(app.import_name, backend=app.config['CELERY_RESULT_BACKEND'],
                     broker=app.config['CELERY_BROKER_URL'])
