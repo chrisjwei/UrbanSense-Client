@@ -1,5 +1,6 @@
 import os
 import time
+import json
 from celery import Celery
 import celery
 from sqlite3 import dbapi2 as sqlite3
@@ -22,7 +23,7 @@ app.config.update(dict(
     DB_TABLE="data",
     INFLUX_HOST='localhost',
     INFLUX_PORT=8086,
-    INFLUX_DB='alpha',
+    INFLUX_DB='beta',
     ENV='dev',
     CELERY_BROKER_URL='redis://localhost:6379/0',
     CELERY_RESULT_BACKEND='redis://localhost:6379/0',
@@ -30,12 +31,12 @@ app.config.update(dict(
         'process-ir-every-30-secs': {
             'task': 'urbansense-client.urbansense_client.process_data',
             'schedule': TASK_TIME_INTERVAL,
-            'args': ["ir", 'SELECT * FROM %s']
+            'args': ["ir", 'SELECT * FROM %s', 0.2]
         },
         'process-accel-every-30-secs': {
             'task': 'urbansense-client.urbansense_client.process_data',
             'schedule': TASK_TIME_INTERVAL,
-            'args': ["accel", 'SELECT * FROM %s WHERE tag_name=\'z\'']
+            'args': ["accel", 'SELECT * FROM %s WHERE tag_name=\'z\'', 0.1]
         }
     },
     CELERY_TIMEZONE='UTC'
@@ -102,28 +103,49 @@ def dated_url_for(endpoint, **values):
 
 # -------------------------------------------------------------------------------
 
-@app.route('/')
-def hello_world():
-	return 'UrbanSense server ready to receive data...\n'
-
-@app.route('/map')
-def render_test_map():
+def get_data():
     db = get_db()
     c = db.cursor()
     data = {}
     for sensor_name in sensor_lut.SENSOR_MAPPINGS.values():
         rows = c.execute("SELECT * FROM %s WHERE lat != 0 AND lng != 0 AND sensor_name = '%s'" % (app.config["DB_TABLE"], sensor_name)).fetchall()
         data[sensor_name] = rows
-    
-    return render_template("index.html", data=data)
 
+    return data
+
+@app.route('/')
+def hello_world():
+	return 'UrbanSense server ready to receive data...\n'
+
+@app.route('/getData')
+def get_data_route():
+    data = get_data()
+    json_data = {}
+    for sensor_name, rows in data.iteritems():
+        json_data[sensor_name] = []
+        for row in rows:
+            json_data[sensor_name].append({
+                "value": row["value"],
+                "is_pothole": row["is_pothole"],
+                "lat": row["lat"],
+                "lng": row["lng"]
+            })
+
+    return jsonify(json_data)
+
+
+@app.route('/map')
+def render_test_map():
+       
+    return render_template("index.html", data=get_data())
 
 # --------------------------------- TASKS --------------------------------------
 
 @celery.task()
-def process_data(sensor_name, query_string):
+def process_data(sensor_name, query_string, smoothing_factor):
     """Polls for 10 minutes of data every 10 minutes and selects the maximum
     value in that time period"""
+    print sensor_name
     current_time = int(time.time())
     client = get_influx_client()
     if app.config["ENV"] == 'dev':
@@ -142,8 +164,7 @@ def process_data(sensor_name, query_string):
         print "No new {} values to be processed!".format(sensor_name)
         return
 
-    anomalies = find_anomalies(pts)
-
+    anomalies = find_anomalies(pts, smoothing_factor)
 
     db = get_db()
     for m in pts:
@@ -154,4 +175,3 @@ def process_data(sensor_name, query_string):
     db.commit()
     print "Success! {} data parsed!".format(sensor_name)
     return
-

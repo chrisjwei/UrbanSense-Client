@@ -9,6 +9,7 @@
       .map { position:absolute; top:0; bottom:0; width:100%; }
     </style>
     <script src="{{ url_for('static', filename='css/leaflet.css') }}"></script>
+    <script src="https://use.fontawesome.com/aca777993a.js"></script>
   </head>
   <body>
     <div id='map-one' class='map'> </div>
@@ -25,7 +26,7 @@
         {% if d.is_pothole %}
           var intensity = 1.0
         {% else %}
-          var intensity = 0.001
+          var intensity = 0.01
         {% endif %}
         accel_points.push(
           [{{ d.lat }}, {{ d.lng }}, intensity] // lat, lng, intensity
@@ -36,13 +37,12 @@
         {% if d.is_pothole %}
           var intensity = 1.0
         {% else %}
-          var intensity = 0.001
+          var intensity = 0.01
         {% endif %}
         ir_points.push(
           [{{ d.lat }}, {{ d.lng }}, intensity] // lat, lng, intensity
         )
       {% endfor %}
-      console.log(ir_points)
       points = {
         "accel": accel_points,
         "ir": ir_points

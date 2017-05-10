@@ -2,11 +2,11 @@ from luminol import anomaly_detector
 from luminol.modules.time_series import TimeSeries
 
 
-def real_anomaly_detection(samples):
+def real_anomaly_detection(samples, smoothing_factor):
 
 	ts = TimeSeries(samples)
 	detector = anomaly_detector.AnomalyDetector(ts, algorithm_name="derivative_detector", algorithm_params={
-      'smoothing_factor': 0.2 # smoothing factor used to compute exponential moving averages
+      'smoothing_factor': smoothing_factor # smoothing factor used to compute exponential moving averages
 	})
 	anomalies = detector.get_anomalies()
 
@@ -21,11 +21,11 @@ def real_anomaly_detection(samples):
 	print anomaly_times
 	return anomaly_times
 
-def find_anomalies(pts):
+def find_anomalies(pts, smoothing_factor):
 
 	samples = {}
 	for p in pts:
 		samples[p["time"]] = p["value"]
 
-	return real_anomaly_detection(samples)
+	return real_anomaly_detection(samples, smoothing_factor)
 
