@@ -145,18 +145,17 @@ def render_test_map():
 def process_data(sensor_name, query_string, smoothing_factor):
     """Polls for 10 minutes of data every 10 minutes and selects the maximum
     value in that time period"""
-    print sensor_name
     current_time = int(time.time())
     client = get_influx_client()
     if app.config["ENV"] == 'dev':
         results = client.query(
             query_string % (sensor_name),
-            epoch="ns"
+            epoch="s"
         )
     else:
         results = client.query(
             (query_string + ' and "time" <= %d AND "time" > %d') % (sensor_name, current_time, current_time - TASK_TIME_INTERVAL),
-            epoch="ns"
+            epoch="s"
         )
         
     pts = list(results.get_points(measurement=sensor_name))
